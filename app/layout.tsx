@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Viga, Roboto } from "next/font/google";
 import { ThemeProvider } from "next-themes";
 import "./globals.css";
+import Providers from "./ReactQueryProvider/Provider";
 
 export const metadata: Metadata = {
   title: "BNBX",
@@ -37,14 +38,16 @@ export default function RootLayout({
       <body
         className={`${geistSans.className} ${roboto.variable} ${viga.variable} antialiased`}
       >
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="system"
-          enableSystem
-          disableTransitionOnChange
-        >
-          {children}
-        </ThemeProvider>
+        <Providers>
+          <ThemeProvider
+            attribute="class"
+            defaultTheme="system"
+            enableSystem
+            disableTransitionOnChange
+          >
+            {children}
+          </ThemeProvider>
+        </Providers>
       </body>
     </html>
   );
