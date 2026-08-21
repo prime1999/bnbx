@@ -4,6 +4,9 @@
 
 @layer base {
   :root {
+    --font-viga: var(--font-zenix-viga);
+    --font-sans: var(--font-geist-sans);
+    --font-roboto: var(--font-roboto);
     --background: 0 0% 100%;
     --foreground: 0 0% 3.9%;
     --card: 0 0% 100%;
@@ -64,5 +67,53 @@
   }
   body {
     @apply bg-background text-foreground;
+    position: relative;
+    overflow-x: hidden;
+    min-height: 100vh;
+  }
+
+  /* Fixed Mesh Gradient Layer */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -2;
+    pointer-events: none;
+    background-image:
+      radial-gradient(at 15% 15%, rgba(57, 255, 20, 0.15) 0px, transparent 45%),
+      radial-gradient(at 85% 25%, rgba(0, 242, 254, 0.1) 0px, transparent 45%),
+      radial-gradient(at 50% 50%, rgba(30, 77, 43, 0.3) 0px, transparent 55%),
+      radial-gradient(
+        at 20% 85%,
+        rgba(186, 255, 57, 0.12) 0px,
+        transparent 45%
+      ),
+      radial-gradient(at 80% 90%, rgba(20, 100, 50, 0.2) 0px, transparent 45%);
+    filter: blur(80px);
+    animation: meshPulse 12s ease-in-out infinite alternate;
+  }
+
+  /* Grid Pattern Layer (Your Grid Styles) */
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-image:
+      linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+    background-size: 56px 56px;
+    background-position: center top;
+  }
+}
+
+/* Subtle breathing animation for the mesh */
+@keyframes meshPulse {
+  0% {
+    transform: scale(1) translate(0px, 0px);
+  }
+  100% {
+    transform: scale(1.06) translate(-8px, 12px);
   }
 }

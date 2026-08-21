@@ -1,22 +1,30 @@
 import type { Metadata } from "next";
-import { Geist } from "next/font/google";
+import { Geist, Viga, Roboto } from "next/font/google";
 import { ThemeProvider } from "next-themes";
 import "./globals.css";
 
-const defaultUrl = process.env.VERCEL_URL
-  ? `https://${process.env.VERCEL_URL}`
-  : "http://localhost:3000";
-
 export const metadata: Metadata = {
-  metadataBase: new URL(defaultUrl),
-  title: "Next.js and Supabase Starter Kit",
-  description: "The fastest way to build apps with Next.js and Supabase",
+  title: "BNBX",
+  description: "An online marketplace for agents built on the BNB chain",
 };
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
   display: "swap",
   subsets: ["latin"],
+});
+
+const roboto = Roboto({
+  variable: "--font-roboto",
+  display: "swap",
+  subsets: ["latin"],
+});
+
+const viga = Viga({
+  variable: "--font-viga",
+  display: "swap",
+  subsets: ["latin"],
+  weight: ["400"],
 });
 
 export default function RootLayout({
@@ -26,7 +34,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${geistSans.className} antialiased`}>
+      <body
+        className={`${geistSans.className} ${roboto.variable} ${viga.variable} antialiased`}
+      >
         <ThemeProvider
           attribute="class"
           defaultTheme="system"
