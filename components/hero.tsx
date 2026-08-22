@@ -1,6 +1,14 @@
+"use client";
+
 import { ArrowUp } from "lucide-react";
+import { useAgents } from "@/app/hooks/useAgent";
 
 const Hero = () => {
+  const { data, isLoading, error } = useAgents({
+    page: 1,
+  });
+
+  console.log({ data });
   return (
     <div className="relative min-h-screen w-full flex flex-col items-center justify-center p-6 overflow-hidden">
       <span className="rounded-full px-3 py-1.5 mb-2 text-xs font-sans text-gray-200 border border-white/15 bg-white/[0.05] backdrop-blur-md shadow-[0_4px_20px_rgba(0,0,0,0.2)] transition-all">

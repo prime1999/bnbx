@@ -10,6 +10,7 @@ function makeQueryClient() {
         //cacheTime: 1000 * 60 * 60, // 1 hour
         // Disable refetch on tab focus to avoid noisy network refetches.
         refetchOnWindowFocus: false,
+        retry: 2,
       },
     },
   });
