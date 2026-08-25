@@ -1,107 +1,73 @@
-import type { AgentCategory, RawAgent } from "./types";
+import { GoogleGenAI } from "@google/genai";
+import { RawAgent } from "./scoring";
 
-interface ClassificationResult {
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+
+export type AgentCategory =
+  | "rebalancing"
+  | "grid_trading"
+  | "yield_optimization"
+  | "health_factor_monitoring"
+  | "general";
+
+export interface ClassificationResult {
   category: AgentCategory;
   confidenceScore: number;
+  categorySimilarity: number;
 }
 
-function normalizeText(value: string | null | undefined) {
-  return (value ?? "").toLowerCase();
-}
+export async function classifyAgent(
+  agent: RawAgent,
+): Promise<ClassificationResult> {
+  const file = agent.registrationFile;
+  const textContext = `
+    Name: ${file?.name || "Unknown"}
+    Description: ${file?.description || "None"}
+    Tools: ${(file?.mcpTools || []).join(", ")}
+    Skills: ${(file?.a2aSkills || []).join(", ")}
+  `.trim();
 
-export function classifyAgent(agent: RawAgent): ClassificationResult {
-  const name = normalizeText(agent.registrationFile?.name);
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: `
+        Classify this Web3 AI agent into exactly ONE of these categories:
+        ["rebalancing", "grid_trading", "yield_optimization", "health_factor_monitoring", "general"].
 
-  const description = normalizeText(agent.registrationFile?.description);
+        Return ONLY a JSON object with this shape:
+        {
+          "category": "category_name",
+          "confidenceScore": 85,
+          "categorySimilarity": 0.92
+        }
 
-  const text = `${name} ${description}`;
+        Agent context to analyze:
+        ${textContext}
+      `,
+    });
 
-  const categories: {
-    category: Exclude<AgentCategory, "general">;
-    keywords: string[];
-  }[] = [
-    {
-      category: "health_factor_monitoring",
-      keywords: [
-        "health factor",
-        "liquidation",
-        "liquidation risk",
-        "lending",
-        "borrow",
-        "borrowing",
-        "collateral",
-        "aave",
-        "loan",
-      ],
-    },
+    const cleanJsonText = (response.text || "")
+      .replace(/```json|```/g, "")
+      .trim();
+    const parsed = JSON.parse(cleanJsonText);
 
-    {
-      category: "yield_optimization",
-      keywords: [
-        "yield",
-        "staking",
-        "apr",
-        "apy",
-        "yield farming",
-        "liquidity",
-        "lp",
-        "liquidity provider",
-        "lending",
-        "rewards",
-      ],
-    },
-
-    {
-      category: "grid_trading",
-      keywords: [
-        "grid trading",
-        "grid",
-        "trading bot",
-        "automated trading",
-        "order placement",
-        "buy and sell",
-        "trading",
-      ],
-    },
-
-    {
-      category: "rebalancing",
-      keywords: [
-        "rebalance",
-        "rebalancing",
-        "portfolio allocation",
-        "asset allocation",
-        "portfolio",
-        "exposure",
-      ],
-    },
-  ];
-
-  let bestCategory: AgentCategory = "general";
-  let bestScore = 0;
-
-  for (const item of categories) {
-    let matches = 0;
-
-    for (const keyword of item.keywords) {
-      if (text.includes(keyword)) {
-        matches++;
-      }
-    }
-
-    if (matches === 0) continue;
-
-    const confidence = Math.min(0.5 + matches * 0.1, 0.98);
-
-    if (confidence > bestScore) {
-      bestScore = confidence;
-      bestCategory = item.category;
-    }
+    return {
+      category: parsed.category || "general",
+      confidenceScore:
+        typeof parsed.confidenceScore === "number"
+          ? parsed.confidenceScore
+          : 70,
+      categorySimilarity:
+        typeof parsed.categorySimilarity === "number"
+          ? parsed.categorySimilarity
+          : 0.7,
+    };
+  } catch (error) {
+    // Fallback if AI generation encounters an error or timeout
+    return {
+      category: "general",
+      confidenceScore: 50,
+      categorySimilarity: 0.5,
+    };
   }
-
-  return {
-    category: bestCategory,
-    confidenceScore:
-      bestCategory === "general" ? 0.2 : Number(bestScore.toFixed(2)),
-  };
 }

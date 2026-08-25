@@ -1,48 +1,46 @@
-import type { RawAgent } from "./types";
+import { RawAgent, VerificationEvidence } from "./types";
 
-export function verifyAgent(agent: RawAgent): boolean {
-  const registration = agent.registrationFile;
+// Verifies identity and proof mechanisms based on actual Subgraph schema
+export function verifyAgent(agent: RawAgent): {
+  verified: boolean;
+  evidence: VerificationEvidence;
+} {
+  const file = agent.registrationFile;
 
-  if (!registration) {
-    return false;
-  }
+  // Check valid registration ID
+  const erc8004Verified = Boolean(agent.agentId && agent.agentId !== "0");
 
-  // Must have a valid owner address.
-  const validOwner = /^0x[a-fA-F0-9]{40}$/.test(agent.owner);
+  // Check validator attestations on-chain
+  const hasValidations = Boolean(
+    agent.validations &&
+    agent.validations.length > 0 &&
+    agent.validations.some((v) => v.status === "passed" || v.status === "1"),
+  );
 
-  if (!validOwner) {
-    return false;
-  }
+  // Check if agent configured supported trust mechanisms
+  const hasTrustMechanisms = Boolean(
+    file?.supportedTrusts && file.supportedTrusts.length > 0,
+  );
 
-  // At least one recognized trust mechanism.
-  const hasTrustSignal = registration.supportedTrusts?.length > 0;
+  // Check x402 payment support flag
+  const x402Enabled = Boolean(file?.x402Support);
 
-  // x402 is another useful trust/payment capability.
-  const hasX402 = registration.x402Support === true;
+  // Check ENS or DID identity
+  const hasENSorDID = Boolean(file?.ens || file?.did);
 
-  // Staking can provide an economic commitment.
-  const hasStake =
-    !!agent.stakingPool &&
-    !agent.stakingPool.isSlashed &&
-    BigInt(agent.stakingPool.stakedBalanceRaw || "0") > BigInt(0);
+  // Overall verified status
+  const verified =
+    erc8004Verified &&
+    (hasValidations || hasTrustMechanisms || hasENSorDID || x402Enabled);
 
-  // Reputation from actual feedback.
-  const feedbackCount = Number(agent.totalFeedback || 0);
-
-  const hasReputation = feedbackCount > 0;
-
-  /*
-   * We don't require every signal.
-   *
-   * An agent can still be legitimate without
-   * having x402 or staking.
-   */
-  const trustSignals = [
-    hasTrustSignal,
-    hasX402,
-    hasStake,
-    hasReputation,
-  ].filter(Boolean).length;
-
-  return trustSignals >= 2;
+  return {
+    verified,
+    evidence: {
+      erc8004Verified,
+      hasValidations,
+      hasTrustMechanisms,
+      x402Enabled,
+      hasENSorDID,
+    },
+  };
 }

@@ -1,41 +1,45 @@
 import { GoogleGenAI } from "@google/genai";
 
-/**
- * Create the Gemini client once.
- *
- * The API key stays on the server.
- */
+// Initialize Gemini client with API key from environment variables
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY!,
 });
 
-/**
- * Generate an embedding for a piece of text.
- */
+// In-memory cache store mapping text strings to pre-computed vector arrays
+const embeddingCache = new Map<string, number[]>();
+
+// Generates vector embeddings for a given string input using Gemini
 export async function generateEmbedding(text: string): Promise<number[]> {
-  if (!text.trim()) {
-    throw new Error("Cannot generate embedding for empty text");
+  // Normalize text input by trimming whitespace and converting to lowercase for cache lookup
+  const normalizedText = text.trim().toLowerCase();
+
+  // Return cached embedding vector if it already exists in memory to save API costs
+  if (embeddingCache.has(normalizedText)) {
+    return embeddingCache.get(normalizedText)!;
   }
 
-  const response = await ai.models.embedContent({
-    model: "gemini-embedding-001",
+  try {
+    // Call Gemini API to generate vector content embeddings using text-embedding-004
+    const response = await ai.models.embedContent({
+      model: "gemini-embedding-001",
+      contents: text,
+    });
 
-    contents: text,
+    // Extract raw vector float numbers from response object
+    const vector = response.embeddings?.[0]?.values ?? [];
 
-    config: {
-      /**
-       * 768 is more than enough for our current
-       * semantic classification use case.
-       */
-      outputDimensionality: 768,
-    },
-  });
+    // Store vector in memory cache if valid vector was produced
+    if (vector.length > 0) {
+      embeddingCache.set(normalizedText, vector);
+    }
 
-  const values = response.embeddings?.[0]?.values;
+    // Return numerical vector array
+    return vector;
+  } catch (error) {
+    // Log embedding generation error for diagnostics
+    console.error("[Embedding Error] Failed to generate vector:", error);
 
-  if (!values || values.length === 0) {
-    throw new Error("Gemini returned an empty embedding");
+    // Return empty array on failure
+    return [];
   }
-
-  return values;
 }

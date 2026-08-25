@@ -1,51 +1,28 @@
-import type { RawAgent } from "./types";
+import { RawAgent } from "./types";
 
-export function filterAgents(agents: RawAgent[]): RawAgent[] {
-  const seen = new Set<string>();
+// Filters out corrupt, incomplete, duplicate, or spam agents retrieved from The Graph
+export function filterAgents(rawAgents: RawAgent[]): RawAgent[] {
+  const seenAgentIds = new Set<string>();
 
-  return agents.filter((agent) => {
-    /*
-     * Remove duplicate agents.
-     */
-    if (seen.has(agent.id)) {
+  return rawAgents.filter((agent) => {
+    // Exclude records missing critical agent identity
+    if (!agent || !agent.agentId) return false;
+
+    // Deduplicate repeated agent entries using agent ID
+    if (seenAgentIds.has(agent.agentId)) return false;
+    seenAgentIds.add(agent.agentId);
+
+    // Filter out obvious spam or placeholder registration descriptions
+    const name = agent.registrationFile?.name?.toLowerCase() || "";
+    const description =
+      agent.registrationFile?.description?.toLowerCase() || "";
+
+    if (name.includes("test agent") || name.includes("asdf") || name.length < 2)
       return false;
-    }
-
-    seen.add(agent.id);
-
-    /*
-     * Remove agents without registration data.
-     */
-    if (!agent.registrationFile) {
+    if (description.includes("test description") || description.length < 5)
       return false;
-    }
 
-    /*
-     * Remove agents without a name.
-     */
-    if (!agent.registrationFile.name?.trim()) {
-      return false;
-    }
-
-    /*
-     * Remove obvious spam/noise.
-     */
-    const name = agent.registrationFile.name.toLowerCase();
-
-    const description = agent.registrationFile.description?.toLowerCase() ?? "";
-
-    /*
-     * Detect repeated garbage text.
-     */
-    const combined = `${name} ${description}`;
-
-    const uniqueCharacters = new Set(combined.replace(/\s/g, "").split(""))
-      .size;
-
-    if (combined.length > 20 && uniqueCharacters < 8) {
-      return false;
-    }
-
+    // Retain clean agent record
     return true;
   });
 }

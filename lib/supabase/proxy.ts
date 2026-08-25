@@ -53,7 +53,9 @@ export async function updateSession(request: NextRequest) {
     pathname === "/" ||
     pathname.startsWith("/login") ||
     pathname.startsWith("/auth") ||
-    pathname === "/api/agents";
+    pathname === "/api/agents" ||
+    pathname === "/api/search/agents" ||
+    pathname === "/api/sync-search";
 
   if (!user && !isPublicRoute) {
     const url = request.nextUrl.clone();
