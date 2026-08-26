@@ -97,3 +97,37 @@ export interface ProcessedAgent {
   totalFeedback: number;
   recentFeedback: string[];
 }
+
+export interface VerificationEvidence {
+  erc8004Verified: boolean;
+  hasValidations: boolean;
+  hasTrustMechanisms: boolean;
+  x402Enabled: boolean;
+  hasENSorDID: boolean;
+}
+
+export interface ProcessedAgent {
+  id: string;
+  chainId: number | string;
+  agentId: string;
+  owner: string;
+  name: string;
+  description: string;
+  image?: string;
+  capabilities: string[];
+  category: AgentCategory;
+  confidenceScore: number;
+  categorySimilarity: number;
+  verified: boolean;
+  verificationEvidence: VerificationEvidence;
+  trustScore: number;
+  qualityScore: number;
+  supportedTrusts: string[];
+  x402Support: boolean;
+  ens?: string;
+  did?: string;
+  mcpEndpoint?: string;
+  a2aEndpoint?: string;
+  totalFeedback: number;
+  recentFeedback: string[];
+}

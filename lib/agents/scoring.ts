@@ -30,11 +30,11 @@ export interface SubgraphValidation {
 }
 
 export interface RawAgent {
-  id: string; // e.g. "8453:1247"
+  id: string;
   chainId: number | string;
   agentId: string;
   owner: string;
-  createdAt: string | number;
+  createdAt?: string | number;
   totalFeedback?: number;
   registrationFile?: SubgraphRegistrationFile | null;
   feedback?: SubgraphFeedback[];

@@ -37,7 +37,7 @@ export function useAgents(options: UseAgentsOptions = {}) {
       if (category && category !== "all") params.append("category", category);
 
       // Route to search endpoint if query is provided, else standard list endpoint
-      const endpoint = query.trim() ? "/api/search/agents" : "/api/agents";
+      const endpoint = "/api/agents";
       const response = await fetch(`${endpoint}?${params.toString()}`);
 
       if (!response.ok) {

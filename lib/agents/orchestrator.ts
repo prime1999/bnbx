@@ -1,50 +1,14 @@
-import { calculateCompositeScore, RawAgent } from "./scoring";
-import { classifyAgent, AgentCategory } from "./classify";
+import { createClient } from "@supabase/supabase-js";
+import { RawAgent, calculateCompositeScore } from "./scoring";
+import { AgentCategory } from "./classify";
 
-// 1. Declare & export the query at the very top of the file
-export const GET_CANDIDATES_QUERY = `
-  query GetAgentCandidates($first: Int!) {
-    agents(
-      first: $first
-      orderBy: totalFeedback
-      orderDirection: desc
-    ) {
-      id
-      chainId
-      agentId
-      owner
-      createdAt
-      totalFeedback
-      registrationFile {
-        name
-        description
-        image
-        mcpEndpoint
-        mcpTools
-        a2aEndpoint
-        a2aSkills
-        supportedTrusts
-        x402Support
-        ens
-        did
-      }
-      feedback(where: { isRevoked: false }, first: 10) {
-        tag1
-        tag2
-        clientAddress
-        feedbackFile {
-          text
-        }
-      }
-      validations(first: 10) {
-        validatorAddress
-        response
-        status
-        tag
-      }
-    }
-  }
-`;
+// Initialize Supabase Client
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+const supabaseKey =
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  "";
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 export interface VerificationEvidence {
   erc8004Verified: boolean;
@@ -82,8 +46,8 @@ export interface ProcessedAgent {
 
 export interface FetchOptions {
   page: number; // 1-indexed (1, 2, 3...)
-  pageSize?: number; // Strict 20 items per page
-  subgraphUrl: string;
+  pageSize?: number; // Default 20
+  subgraphUrl?: string; // Optional/Deprecated fallback
   onlyVerified?: boolean;
   category?: string;
   searchQuery?: string;
@@ -93,46 +57,90 @@ export async function getRankedAgentsPage(options: FetchOptions) {
   const {
     page = 1,
     pageSize = 20,
-    subgraphUrl,
     onlyVerified = false,
     category = "all",
     searchQuery = "",
   } = options;
 
-  const CANDIDATE_POOL_SIZE = 150;
+  // 1. Build Base Supabase Query
+  let queryBuilder = supabase
+    .from("agent_search_index")
+    .select("*", { count: "exact" });
 
-  // 1. Fetch Candidate Pool using GET_CANDIDATES_QUERY
-  const response = await fetch(subgraphUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      query: GET_CANDIDATES_QUERY,
-      variables: { first: CANDIDATE_POOL_SIZE },
-    }),
-  });
+  // 2. Apply Category Filter
+  if (category && category !== "all") {
+    // Matches either 'category' or 'inferred_category' column in Supabase
+    queryBuilder = queryBuilder.or(
+      `category.eq.${category},inferred_category.eq.${category}`,
+    );
+  }
 
-  const json = await response.json();
-  const rawAgents: RawAgent[] = json.data?.agents || [];
-  console.log("Raw agents:", rawAgents);
+  // 3. Apply Text Search Filter across Name, Description, Tools, and Skills
+  if (searchQuery.trim().length > 0) {
+    const term = `%${searchQuery.trim().toLowerCase()}%`;
+    queryBuilder = queryBuilder.or(
+      `name.ilike.${term},description.ilike.${term},mcp_tools.ilike.${term},a2a_skills.ilike.${term},owner.ilike.${term},agent_id.ilike.${term}`,
+    );
+  }
 
-  // 2. Compute Multi-Factor Score & Verify
-  let scoredCandidates = rawAgents.map((raw) => {
-    const compositeScore = calculateCompositeScore(raw);
-    const file = raw.registrationFile;
+  // Fetch all candidate records for scoring and verification filtering
+  const { data: dbAgents, error, count } = await queryBuilder;
+
+  if (error) {
+    console.error("[Supabase Fetch Error]:", error);
+    return { data: [], totalCount: 0, totalPages: 0, currentPage: page };
+  }
+
+  // 4. Transform DB rows, Compute Multi-Factor Scores & Verification
+  let scoredCandidates = (dbAgents || []).map((row) => {
+    const mcpTools: string[] = Array.isArray(row.mcp_tools)
+      ? row.mcp_tools
+      : typeof row.mcp_tools === "string"
+        ? JSON.parse(row.mcp_tools || "[]")
+        : [];
+
+    const a2aSkills: string[] = Array.isArray(row.a2a_skills)
+      ? row.a2a_skills
+      : typeof row.a2a_skills === "string"
+        ? JSON.parse(row.a2a_skills || "[]")
+        : [];
+
+    const supportedTrusts: string[] = Array.isArray(row.supported_trusts)
+      ? row.supported_trusts
+      : typeof row.supported_trusts === "string"
+        ? JSON.parse(row.supported_trusts || "[]")
+        : [];
+
+    // Reconstruct RawAgent shape for calculateCompositeScore
+    const rawAgent: RawAgent = {
+      id: row.agent_id,
+      chainId: row.chain_id,
+      agentId: row.agent_id,
+      owner: row.owner,
+      totalFeedback: row.total_feedback || 0,
+      registrationFile: {
+        name: row.name,
+        description: row.description,
+        image: row.image,
+        mcpEndpoint: row.mcp_endpoint,
+        mcpTools,
+        a2aEndpoint: row.a2a_endpoint,
+        a2aSkills,
+        supportedTrusts,
+        x402Support: row.x402_support,
+        ens: row.ens,
+        did: row.did,
+      },
+    };
+
+    const compositeScore = calculateCompositeScore(rawAgent);
 
     const evidence: VerificationEvidence = {
-      erc8004Verified: Boolean(raw.agentId && raw.agentId !== "0"),
-      hasValidations: Boolean(
-        raw.validations?.some(
-          (v) =>
-            v.status === "passed" || v.status === "1" || v.status === "success",
-        ),
-      ),
-      hasTrustMechanisms: Boolean(
-        file?.supportedTrusts && file.supportedTrusts.length > 0,
-      ),
-      x402Enabled: Boolean(file?.x402Support),
-      hasENSorDID: Boolean(file?.ens || file?.did),
+      erc8004Verified: Boolean(row.agent_id && row.agent_id !== "0"),
+      hasValidations: row.total_feedback > 0, // Primary trust check
+      hasTrustMechanisms: supportedTrusts.length > 0,
+      x402Enabled: Boolean(row.x402_support),
+      hasENSorDID: Boolean(row.ens || row.did),
     };
 
     const isVerified =
@@ -142,102 +150,60 @@ export async function getRankedAgentsPage(options: FetchOptions) {
         evidence.hasENSorDID ||
         evidence.x402Enabled);
 
-    return { raw, compositeScore, isVerified, evidence };
+    const capabilities = [...a2aSkills, ...mcpTools];
+
+    const processedAgent: ProcessedAgent = {
+      id: row.agent_id,
+      chainId: row.chain_id,
+      agentId: row.agent_id,
+      owner: row.owner || "0x0000000000000000000000000000000000000000",
+      name: row.name || `Agent #${row.agent_id}`,
+      description: row.description || "No description provided.",
+      image: row.image,
+      capabilities:
+        capabilities.length > 0 ? capabilities : ["Autonomous Execution"],
+      category: (row.inferred_category ||
+        row.category ||
+        "general") as AgentCategory,
+      confidenceScore: row.category_confidence || 1.0,
+      categorySimilarity: row.category_confidence || 1.0,
+      verified: isVerified,
+      verificationEvidence: evidence,
+      trustScore: compositeScore,
+      qualityScore: compositeScore,
+      supportedTrusts,
+      x402Support: Boolean(row.x402_support),
+      ens: row.ens,
+      did: row.did,
+      mcpEndpoint: row.mcp_endpoint,
+      a2aEndpoint: row.a2a_endpoint,
+      totalFeedback: row.total_feedback || 0,
+      recentFeedback: [],
+    };
+
+    return { processedAgent, compositeScore, isVerified };
   });
 
-  // 3. Search Filter
-  if (searchQuery.trim().length > 0) {
-    const query = searchQuery.toLowerCase().trim();
-    scoredCandidates = scoredCandidates.filter(({ raw }) => {
-      const file = raw.registrationFile;
-      const name = (file?.name || "").toLowerCase();
-      const description = (file?.description || "").toLowerCase();
-      const tools = (file?.mcpTools || []).join(" ").toLowerCase();
-      const skills = (file?.a2aSkills || []).join(" ").toLowerCase();
-      const owner = (raw.owner || "").toLowerCase();
-      const agentId = (raw.agentId || "").toLowerCase();
-
-      return (
-        name.includes(query) ||
-        description.includes(query) ||
-        tools.includes(query) ||
-        skills.includes(query) ||
-        owner.includes(query) ||
-        agentId.includes(query)
-      );
-    });
-  }
-
-  // 4. Verified Toggle Filter
+  // 5. Apply "Verified Only" Filter if enabled
   if (onlyVerified) {
     scoredCandidates = scoredCandidates.filter((item) => item.isVerified);
   }
 
-  // 5. Global Sort: Highest Score First
+  // 6. Global Sort: Highest Multi-Factor Composite Score First
   scoredCandidates.sort((a, b) => b.compositeScore - a.compositeScore);
 
-  // 6. Slice exact 20-item page window BEFORE Gemini classification
+  // 7. Paginate Window
   const startIndex = (page - 1) * pageSize;
-  const pageSlice = scoredCandidates.slice(startIndex, startIndex + pageSize);
+  const paginatedAgents = scoredCandidates
+    .slice(startIndex, startIndex + pageSize)
+    .map((item) => item.processedAgent);
 
-  // 7. Classify ONLY the sliced 20 items (Saves Gemini API calls & latency)
-  const processedPage = await Promise.all(
-    pageSlice.map(async ({ raw, compositeScore, isVerified, evidence }) => {
-      const file = raw.registrationFile;
-      const classification = await classifyAgent(raw);
-
-      const capabilities = [
-        ...(file?.a2aSkills || []),
-        ...(file?.mcpTools || []),
-      ];
-
-      const recentFeedback = (raw.feedback || [])
-        .map((f) => f.feedbackFile?.text)
-        .filter((t): t is string => Boolean(t));
-
-      const processedAgent: ProcessedAgent = {
-        id: raw.id,
-        chainId: raw.chainId,
-        agentId: raw.agentId,
-        owner: raw.owner || "0x0000000000000000000000000000000000000000",
-        name: file?.name || `Agent #${raw.agentId}`,
-        description: file?.description || "No description provided.",
-        image: file?.image,
-        capabilities:
-          capabilities.length > 0 ? capabilities : ["Autonomous Execution"],
-        category: classification.category,
-        confidenceScore: classification.confidenceScore,
-        categorySimilarity: classification.categorySimilarity,
-        verified: isVerified,
-        verificationEvidence: evidence,
-        trustScore: compositeScore,
-        qualityScore: compositeScore,
-        supportedTrusts: file?.supportedTrusts || [],
-        x402Support: Boolean(file?.x402Support),
-        ens: file?.ens,
-        did: file?.did,
-        mcpEndpoint: file?.mcpEndpoint,
-        a2aEndpoint: file?.a2aEndpoint,
-        totalFeedback: raw.totalFeedback || 0,
-        recentFeedback,
-      };
-
-      return processedAgent;
-    }),
-  );
-
-  // 8. Category Filter
-  let finalData = processedPage;
-  if (category && category !== "all") {
-    finalData = processedPage.filter(
-      (agent) => agent.category.toLowerCase() === category.toLowerCase(),
-    );
-  }
+  const totalFilteredCount = scoredCandidates.length;
 
   return {
-    data: finalData,
-    totalCount: scoredCandidates.length,
-    totalPages: Math.ceil(scoredCandidates.length / pageSize),
+    data: paginatedAgents,
+    totalCount: totalFilteredCount,
+    totalPages: Math.ceil(totalFilteredCount / pageSize),
     currentPage: page,
   };
 }

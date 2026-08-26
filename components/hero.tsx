@@ -5,14 +5,15 @@ import { useAgents } from "@/app/hooks/useAgent";
 import { useAgentSearch } from "@/app/hooks/useAgentSearch";
 
 const Hero = () => {
-  // const { data, isLoading, error } = useAgents({
-  //   page: 1,
-  // });
-
-  const { data, isLoading, error } = useAgentSearch({
-    query:
-      "Find me a bot that can help me maintain target percentage allocations.",
+  const { data, isLoading, error } = useAgents({
+    page: 7,
+    category: "Health Factor Monitoring",
   });
+
+  // const { data, isLoading, error } = useAgentSearch({
+  //   query:
+  //     "Find me a bot that can help me maintain target percentage allocations.",
+  // });
 
   console.log({ data });
   return (
